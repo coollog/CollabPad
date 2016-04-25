@@ -1,0 +1,153 @@
+<style>
+  * {
+    margin: 0;
+    box-sizing: border-box;
+  }
+  textarea {
+    width: 50%;
+    height: 50%;
+  }
+</style>
+
+<textarea></textarea>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.2/jquery.min.js"></script>
+<script>
+  var socket = io();
+
+  function TextClient(socket, monitor) {
+    // Private vars
+    var version = -1;
+    var self = this;
+
+    // Methods
+    (function __construct() {
+      socket.on('init', function (data) {
+        version = data.version;
+        monitor.init(self, data.text);
+
+        console.log('Setup version: ' + version);
+        console.log('Setup text: "' + data.text + '"');
+      });
+
+      socket.on('version', function (data) {
+        version = data.version;
+      });
+    })();
+
+    function sendAddition(addition, bounds) {
+      socket.emit('addition', {
+        version: version,
+        addition: addition,
+        bounds: bounds
+      });
+    }
+    function sendDeletion(bounds) {
+      socket.emit('deletion', {
+        version: version,
+        bounds: bounds
+      });
+    }
+
+    // Public interface
+    this.sendAddition = sendAddition;
+    this.sendDeletion = sendDeletion;
+  }
+
+  function TextMonitor(textarea) {
+    // Private vars
+    var lastText;
+    var client = null;
+
+    // Methods
+    (function __construct() {
+      lastText = textarea.val();
+
+      textarea.keyup(changed).change(changed);
+    })();
+
+    function init(textClient, text) {
+      client = textClient;
+
+      lastText = text;
+      textarea.val(text);
+    }
+
+    function changed() {
+      if (client == null) return;
+
+      var curText = textarea.val();
+      if (lastText == curText) return;
+
+      if (lastText.length < curText.length) { // Addition
+        var additionBounds = getDiffBounds(lastText, curText);
+
+        var addition = getChange(lastText, curText, additionBounds[0]);
+        var newText = getNewTextWithAddition(lastText, addition, additionBounds);
+
+        console.log('Text changed from "'+lastText+'" to "'+curText+'"');
+        console.log('index0: '+additionBounds[0]+', index1: '+additionBounds[1]+
+                    ', addition: "'+addition+'"');
+        console.log('New text is "'+newText+'"');
+
+        client.sendAddition(addition, additionBounds);
+      } else { // Deletion
+        var deletionBounds = getDiffBounds(curText, lastText);
+
+        var deletion = getChange(curText, lastText, deletionBounds[0]);
+        var newText = getNewTextWithDeletion(lastText, deletionBounds);
+
+        console.log('Text changed from "'+lastText+'" to "'+curText+'"');
+        console.log('index0: '+deletionBounds[0]+', index1: '+deletionBounds[1]+
+                    ', deletion: "'+deletion+'"');
+        console.log('New text is "'+newText+'"');
+
+        client.sendDeletion(deletionBounds);
+      }
+
+      lastText = curText;
+
+      // Helper functions
+      function getChange(shorter, longer, lowerBound) {
+        return longer.substring(lowerBound,
+                                lowerBound + longer.length - shorter.length);
+      }
+      function getNewTextWithAddition(prev, addition, bounds) {
+        var head = prev.substring(0, bounds[0]);
+        var tail = prev.substring(prev.length - bounds[1]);
+        return head + addition + tail;
+      }
+      function getNewTextWithDeletion(prev, bounds) {
+        var head = prev.substring(0, bounds[0]);
+        var tail = prev.substring(prev.length - bounds[1]);
+        return head + tail;
+      }
+      function getDiffBounds(shorter, longer) {
+        var firstIndexDiff = getFirstIndexDiff(shorter, longer);
+        var endIndexSame = getEndIndexSame(shorter, longer, firstIndexDiff);
+        return [ firstIndexDiff, endIndexSame ];
+
+        function getFirstIndexDiff(a, b) {
+          for (var i = 0; i < a.length; i ++) {
+            if (a[i] != b[i]) return i;
+          }
+          return a.length;
+        }
+        function getEndIndexSame(a, b, afterIndex) {
+          var endLength = a.length - afterIndex;
+          for (var i = 0; i < endLength; i ++) {
+            if (a[a.length - i - 1] != b[b.length - i - 1]) return i;
+          }
+          return endLength;
+        }
+      }
+    }
+
+    // Public interface
+    this.init = init;
+  }
+
+  var monitor = new TextMonitor($('textarea'));
+  var client = new TextClient(socket, monitor);
+</script>
