@@ -78,6 +78,8 @@ function TextServer() {
             if (segment.start <= entryEnd || segment.end >= entryStart) {
               var removeStart = Math.max(segment.start, entryStart);
               var removeEnd = Math.min(segment.end, entryEnd);
+              console.log("remove start, end:");
+              console.log([removeStart, removeEnd]);
 
               if (segment.start < removeStart) {
                 newSegments.push({
@@ -124,20 +126,6 @@ function TextServer() {
         });
 
         return newText;
-
-        // This needs to be rewritten to do concurrent additions/deletions.
-        // entries.forEach(function (entry) {
-        //   text = getNewText(text, entry.addition, entry.bounds);
-        // });
-
-        // return text;
-
-        // Helpers
-        // function getNewText(prev, addition, bounds) {
-        //   var head = prev.substring(0, bounds[0]);
-        //   var tail = prev.substring(prev.length - bounds[1]);
-        //   return head + addition + tail;
-        // }
       }
     }
     function getMaxVersion() { return maxVersion; }
@@ -173,7 +161,7 @@ function IOServer() {
     io.on('connection', function (socket) {
       connection(socket);
       socket.on('disconnect', disconnect);
-      socket.on('change', function (data) { change(socket, data); });
+      socket.on('change', function (data) { change(io, data); });
     });
   }
 
@@ -187,12 +175,15 @@ function IOServer() {
   function disconnect() {
     console.log('user disconnected');
   }
-  function change(socket, data) {
+  function change(io, data) {
     texter.addChange(data.version, data.addition, data.bounds);
 
-    socket.emit('version', {
-      version: texter.getVersion()
-    });
+    setTimeout(function () {
+      io.emit('version', {
+        version: texter.getVersion(),
+        text: texter.getText()
+      });
+    }, 3000);
   }
 
   // Public interface

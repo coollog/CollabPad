@@ -31,10 +31,11 @@
         console.log('Setup text: "' + data.text + '"');
       });
 
-      // socket.on('version', function (data) {
-      //   version = data.version;
-      //   console.log('Version update: ' + version);
-      // });
+      socket.on('version', function (data) {
+        version = data.version;
+        monitor.update(data.text);
+        console.log('Version update: ' + version);
+      });
     })();
 
     function sendChange(addition, bounds) {
@@ -71,6 +72,11 @@
     function init(textClient, text) {
       client = textClient;
 
+      lastText = text;
+      textarea.val(text);
+    }
+
+    function update(text) {
       lastText = text;
       textarea.val(text);
     }
@@ -149,6 +155,7 @@
 
     // Public interface
     this.init = init;
+    this.update = update;
   }
 
   var monitor = new TextMonitor($('textarea'));
