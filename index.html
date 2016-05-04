@@ -31,23 +31,24 @@
         console.log('Setup text: "' + data.text + '"');
       });
 
-      socket.on('version', function (data) {
-        version = data.version;
-      });
+      // socket.on('version', function (data) {
+      //   version = data.version;
+      //   console.log('Version update: ' + version);
+      // });
     })();
 
-    function sendAddition(addition, bounds) {
-      socket.emit('addition', {
+    function sendChange(addition, bounds) {
+      socket.emit('change', {
         version: version,
         addition: addition,
         bounds: bounds
       });
     }
+    function sendAddition(addition, bounds) {
+      sendChange(addition, bounds);
+    }
     function sendDeletion(bounds) {
-      socket.emit('deletion', {
-        version: version,
-        bounds: bounds
-      });
+      sendChange('', bounds);
     }
 
     // Public interface
@@ -82,6 +83,7 @@
 
       if (lastText.length < curText.length) { // Addition
         var additionBounds = getDiffBounds(lastText, curText);
+        console.log("additionBounds: " + JSON.stringify(additionBounds));
 
         var addition = getChange(lastText, curText, additionBounds[0]);
         var newText = getNewTextWithAddition(lastText, addition, additionBounds);
@@ -94,6 +96,7 @@
         client.sendAddition(addition, additionBounds);
       } else { // Deletion
         var deletionBounds = getDiffBounds(curText, lastText);
+        console.log("deletionBounds: " + JSON.stringify(deletionBounds));
 
         var deletion = getChange(curText, lastText, deletionBounds[0]);
         var newText = getNewTextWithDeletion(lastText, deletionBounds);

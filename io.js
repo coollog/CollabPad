@@ -12,7 +12,12 @@ function TextServer() {
     var maxVersion = 0;
 
     // Methods
-    function addChange(version, entry) {
+    function addChange(version, addition, bounds) {
+      var entry = {
+        addition: addition,
+        bounds: bounds
+      };
+
       if (version in log) {
         log[version].push(entry);
       } else if (version >= maxVersion) {
@@ -21,23 +26,8 @@ function TextServer() {
       } else {
         console.log('Attempted to add an old version!');
       }
-    }
-    function addAddition(version, addition, bounds) {
-      var entry = {
-        type: 'addition',
-        addition: addition,
-        bounds: bounds
-      };
 
-      addChange(version, entry);
-    }
-    function addDeletion(version, bounds) {
-      var entry = {
-        type: 'deletion',
-        bounds: bounds
-      };
-
-      addChange(version, entry);
+      console.log("New Log:"); console.log(JSON.stringify(log));
     }
     function playback(textBase, versionBase) {
       var text = textBase;
@@ -48,42 +38,112 @@ function TextServer() {
         }
 
         var entries = log[version];
-        text = playbackEntriesOnText(text, entries);
+
+        console.log("playing back entries:");
+        console.log(text);
+        console.log(JSON.stringify(entries));
+
+        text = mergeEntries(text, entries);
       }
 
       return text;
 
       // Helpers
-      function playbackEntriesOnText(text, entries) {
-        // This needs to be rewritten to do concurrent additions/deletions.
+      function mergeEntries(text, entries) {
+        // Note that bounds in the entries are in format:
+        // [index from beginning, index from end (length of string)]
+
+        var segments = [{
+          start: 0,
+          end: text.length - 1 // inclusive
+        }];
+        var additions = [];
+
+        // Go through each entry and cut up the segments accordingly.
         entries.forEach(function (entry) {
-          if (entry.type == 'addition') {
-            text = getNewTextWithAddition(text, entry.addition, entry.bounds);
-          } else if (entry.type == 'deletion') {
-            text = getNewTextWithDeletion(text, entry.bounds);
-          }
+          var entryStart = entry.bounds[0];
+          var entryEnd = text.length - 1 - entry.bounds[1];
+
+          var addition = entry.addition;
+          additions.push({
+            text: addition,
+            index: entryStart,
+            used: false
+          });
+
+          var newSegments = [];
+
+          // Cut up each segment according to the bounds of the entry.
+          segments.forEach(function (segment) {
+            if (segment.start <= entryEnd || segment.end >= entryStart) {
+              var removeStart = Math.max(segment.start, entryStart);
+              var removeEnd = Math.min(segment.end, entryEnd);
+
+              if (segment.start < removeStart) {
+                newSegments.push({
+                  start: segment.start,
+                  end: Math.min(segment.end, removeStart - 1)
+                });
+              }
+              if (segment.end > removeEnd) {
+                newSegments.push({
+                  start: Math.max(segment.start, removeEnd + 1),
+                  end: segment.end
+                });
+              }
+            }
+          });
+
+          console.log("Current entry:");
+          console.log(entry);
+          console.log("Current segments:");
+          console.log(segments);
+          console.log("New segments:");
+          console.log(newSegments);
+
+          segments = newSegments;
         });
 
-        return text;
+        console.log("Segments:");
+        console.log(segments);
+        console.log("Additions:");
+        console.log(additions);
+
+        var newText = '';
+        segments.forEach(function (segment) {
+          additions.forEach(function (addition) {
+            if (!addition.used && addition.index <= segment.start) {
+              newText += addition.text;
+              addition.used = true;
+            }
+          });
+          newText += text.substring(segment.start, segment.end + 1);
+        });
+        additions.forEach(function (addition) {
+          if (!addition.used) newText += addition.text;
+        });
+
+        return newText;
+
+        // This needs to be rewritten to do concurrent additions/deletions.
+        // entries.forEach(function (entry) {
+        //   text = getNewText(text, entry.addition, entry.bounds);
+        // });
+
+        // return text;
 
         // Helpers
-        function getNewTextWithAddition(prev, addition, bounds) {
-          var head = prev.substring(0, bounds[0]);
-          var tail = prev.substring(prev.length - bounds[1]);
-          return head + addition + tail;
-        }
-        function getNewTextWithDeletion(prev, bounds) {
-          var head = prev.substring(0, bounds[0]);
-          var tail = prev.substring(prev.length - bounds[1]);
-          return head + tail;
-        }
+        // function getNewText(prev, addition, bounds) {
+        //   var head = prev.substring(0, bounds[0]);
+        //   var tail = prev.substring(prev.length - bounds[1]);
+        //   return head + addition + tail;
+        // }
       }
     }
     function getMaxVersion() { return maxVersion; }
 
     // Public interface
-    this.addAddition = addAddition;
-    this.addDeletion = addDeletion;
+    this.addChange = addChange;
     this.getMaxVersion = getMaxVersion;
     this.playback = playback;
   }
@@ -99,8 +159,7 @@ function TextServer() {
   // Public interface
   this.getText = getText;
   this.getVersion = getVersion;
-  this.addAddition = log.addAddition;
-  this.addDeletion = log.addDeletion;
+  this.addChange = log.addChange;
 }
 
 function IOServer() {
@@ -114,8 +173,7 @@ function IOServer() {
     io.on('connection', function (socket) {
       connection(socket);
       socket.on('disconnect', disconnect);
-      socket.on('addition', addition);
-      socket.on('deletion', deletion);
+      socket.on('change', function (data) { change(socket, data); });
     });
   }
 
@@ -129,11 +187,12 @@ function IOServer() {
   function disconnect() {
     console.log('user disconnected');
   }
-  function addition(data) {
-    texter.addAddition(data.version, data.addition, data.bounds);
-  }
-  function deletion(data) {
-    texter.addDeletion(data.version, data.bounds);
+  function change(socket, data) {
+    texter.addChange(data.version, data.addition, data.bounds);
+
+    socket.emit('version', {
+      version: texter.getVersion()
+    });
   }
 
   // Public interface
